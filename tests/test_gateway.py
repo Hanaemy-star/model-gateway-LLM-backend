@@ -117,3 +117,35 @@ def test_backend_internal_error():
         )
 
     assert response.status_code == 502
+
+def test_backend_too_many_request():
+
+    with respx.mock:
+        respx.post(UPSTREAM_URL).mock(
+              return_value=httpx.Response(
+                        429,
+                        json={"error": "Too many requests"},
+              )
+          )
+        response = client.post(
+            "/v1/chat/completions",
+            json=REQUEST_PAYLOAD,
+        )
+
+    assert response.status_code == 429
+
+def test_backend_unhandled_status_returns_502():
+
+    with respx.mock:
+        respx.post(UPSTREAM_URL).mock(
+            return_value=httpx.Response(
+                502,
+                json={"error": "undefiend error"},
+            )
+        )
+        response = client.post(
+            "/v1/chat/completions",
+            json=REQUEST_PAYLOAD,
+        )
+
+    assert response.status_code == 502

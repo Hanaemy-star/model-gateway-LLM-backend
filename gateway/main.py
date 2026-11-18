@@ -25,6 +25,16 @@ async def completion(payload: dict):
             response.raise_for_status()
             
             return response.json()
+        except httpx.ConnectError:
+            raise HTTPException(
+                    status_code=503,
+                    detail="Ошибка подключения",
+                  )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                     status_code=504,
+                     detail="Превышен лимит ожидания",
+                  )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 503:
                 raise HTTPException(
@@ -36,3 +46,30 @@ async def completion(payload: dict):
                         status_code=504,
                         detail="backend не отвечает вовремя"
                       )
+            elif exc.response.status_code == 502 or exc.response.status_code == 500:
+                raise HTTPException(
+                        status_code=502,
+                        detail="Сервис временно недоступен",
+                      )
+            elif exc.response.status_code == 400:
+                raise HTTPException(
+                         status_code=400,
+                         detail="Bad request",
+                       )
+            elif exc.response.status_code == 404:
+                raise HTTPException(
+                         status_code=404,
+                         detail="Сервиса не существует",
+                       )
+            elif exc.response.status_code == 429:
+                raise HTTPException(
+                         status_code=429,
+                         detail="Слишком много запросов",
+                       )
+
+            else:
+                raise HTTPException(
+                        status_code=exc.response.status_code,
+                        detail="Неизвестная ошибка",
+                      )
+
