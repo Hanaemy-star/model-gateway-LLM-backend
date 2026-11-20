@@ -9,7 +9,10 @@ from gateway.main import app
 
 UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 REQUEST_PAYLOAD = {
@@ -40,14 +43,14 @@ SUCCESS_RESPONSE = {
 }
 
 
-def test_health():
+def test_health(client):
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
 
 
-def test_successful_completion():
+def test_successful_completion(client):
 
     with respx.mock:
         route = respx.post(UPSTREAM_URL).mock(
@@ -67,7 +70,7 @@ def test_successful_completion():
     assert route.called
 
 
-def test_backend_connection_error():
+def test_backend_connection_error(client):
 
     with respx.mock:
         respx.post(UPSTREAM_URL).mock(
@@ -84,7 +87,7 @@ def test_backend_connection_error():
     assert response.status_code == 503
 
 
-def test_backend_timeout():
+def test_backend_timeout(client):
 
     with respx.mock:
         respx.post(UPSTREAM_URL).mock(
@@ -101,7 +104,7 @@ def test_backend_timeout():
     assert response.status_code == 504
 
 
-def test_backend_internal_error():
+def test_backend_internal_error(client):
 
     with respx.mock:
         respx.post(UPSTREAM_URL).mock(
@@ -118,7 +121,7 @@ def test_backend_internal_error():
 
     assert response.status_code == 502
 
-def test_backend_too_many_request():
+def test_backend_too_many_request(client):
 
     with respx.mock:
         respx.post(UPSTREAM_URL).mock(
@@ -134,7 +137,7 @@ def test_backend_too_many_request():
 
     assert response.status_code == 429
 
-def test_backend_unhandled_status_returns_502():
+def test_backend_unhandled_status_returns_502(client):
 
     with respx.mock:
         respx.post(UPSTREAM_URL).mock(
