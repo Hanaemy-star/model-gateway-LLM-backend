@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from contextlib import asynccontextmanager
 
+from .schemas import Message, ChatCompletionRequest 
+
 import httpx
 
 
@@ -29,11 +31,11 @@ post_completion_v1 = "/v1/chat/completions"
 
 
 @app.post(post_completion_v1)
-async def completion(request: Request, payload: dict):
+async def completion(request: Request, payload: ChatCompletionRequest):
     try:
         response = await request.app.state.http_client.post(
             "http://localhost:11434/v1/chat/completions",
-            json=payload,
+            json=payload.model_dump(exclude_none=True),
         )
         response.raise_for_status()
 
@@ -78,6 +80,11 @@ async def completion(request: Request, payload: dict):
             raise HTTPException(
                 status_code=429,
                 detail="Слишком много запросов",
+            )
+        elif exc.response.status_code == 422:
+            raise HTTPException(
+                status_code=422,
+                detail="Необрабатываемый экземпляр",
             )
         else:
             raise HTTPException(
