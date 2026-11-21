@@ -1,16 +1,17 @@
-from fastapi import Request
-from fastapi import FastAPI
-from fastapi import HTTPException
 from contextlib import asynccontextmanager
 
-from .schemas import Message, ChatCompletionRequest 
-
 import httpx
+from fastapi import FastAPI, HTTPException, Request
+
+from .schemas import ChatCompletionRequest
+
+
+UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+    async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
         app.state.http_client = client
         yield
 
@@ -20,74 +21,47 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    res = {
-        "status": "ok",
-        "service": "llm-gateway",
-    }
-    return res
+    return {"status": "ok", "service": "llm-gateway"}
 
 
-post_completion_v1 = "/v1/chat/completions"
-
-
-@app.post(post_completion_v1)
+@app.post("/v1/chat/completions")
 async def completion(request: Request, payload: ChatCompletionRequest):
+    # Пока мы не реализовали передачу SSE-потока, stream=True запрещён.
+    if payload.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="Streaming пока не поддерживается",
+        )
+
     try:
         response = await request.app.state.http_client.post(
-            "http://localhost:11434/v1/chat/completions",
+            UPSTREAM_URL,
             json=payload.model_dump(exclude_none=True),
         )
         response.raise_for_status()
 
-        return response.json()
-    except httpx.ConnectError:
+    except httpx.ConnectError as exc:
         raise HTTPException(
             status_code=503,
-            detail="Ошибка подключения",
-        )
-    except httpx.TimeoutException:
+            detail="Нет соединения с LLM-бэкендом",
+        ) from exc
+
+    except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=504,
-            detail="Превышен лимит ожидания",
-        )
+            detail="Превышено время ожидания LLM-бэкенда",
+        ) from exc
+
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 503:
-            raise HTTPException(
-                status_code=503,
-                detail="ollama выключена",
-            )
-        elif exc.response.status_code == 504:
-            raise HTTPException(
-                status_code=504,
-                detail="backend не отвечает вовремя",
-            )
-        elif exc.response.status_code == 502 or exc.response.status_code == 500:
-            raise HTTPException(
-                status_code=502,
-                detail="Сервис временно недоступен",
-            )
-        elif exc.response.status_code == 400:
-            raise HTTPException(
-                status_code=400,
-                detail="Bad request",
-            )
-        elif exc.response.status_code == 404:
-            raise HTTPException(
-                status_code=404,
-                detail="Сервиса не существует",
-            )
-        elif exc.response.status_code == 429:
-            raise HTTPException(
-                status_code=429,
-                detail="Слишком много запросов",
-            )
-        elif exc.response.status_code == 422:
-            raise HTTPException(
-                status_code=422,
-                detail="Необрабатываемый экземпляр",
-            )
-        else:
-            raise HTTPException(
-                status_code=exc.response.status_code,
-                detail="Неизвестная ошибка",
-            )
+        upstream_status = exc.response.status_code
+        passthrough_statuses = {400, 404, 422, 429, 503, 504}
+        gateway_status = (
+            upstream_status if upstream_status in passthrough_statuses else 502
+        )
+
+        raise HTTPException(
+            status_code=gateway_status,
+            detail=f"Ошибка LLM-бэкенда: HTTP {upstream_status}",
+        ) from exc
+
+    return response.json()
