@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 
 from .schemas import ChatCompletionRequest
-
+from .backends.ollama import OllamaBackend
 
 UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
@@ -13,6 +13,7 @@ UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 async def lifespan(app: FastAPI):
     async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
         app.state.http_client = client
+        app.state.ollama_backend = OllamaBackend(client, UPSTREAM_URL)
         yield
 
 
@@ -34,11 +35,7 @@ async def completion(request: Request, payload: ChatCompletionRequest):
         )
 
     try:
-        response = await request.app.state.http_client.post(
-            UPSTREAM_URL,
-            json=payload.model_dump(exclude_none=True),
-        )
-        response.raise_for_status()
+        response = await request.app.state.ollama_backend.generate(payload.model_dump(exclude_none=True))
 
     except httpx.ConnectError as exc:
         raise HTTPException(
@@ -64,4 +61,4 @@ async def completion(request: Request, payload: ChatCompletionRequest):
             detail=f"Ошибка LLM-бэкенда: HTTP {upstream_status}",
         ) from exc
 
-    return response.json()
+    return response
