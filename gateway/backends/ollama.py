@@ -1,12 +1,15 @@
 import httpx
 
-class OllamaBackend:
+from .base import BaseBackend
+
+
+class OllamaBackend(BaseBackend):
     def __init__(
         self,
         client: httpx.AsyncClient,
         endpoint_url: str
     ):
-
+        
         self.client = client
         self.endpoint_url = endpoint_url
 

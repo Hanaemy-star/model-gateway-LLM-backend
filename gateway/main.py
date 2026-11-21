@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 
-from .schemas import ChatCompletionRequest
 from .backends.ollama import OllamaBackend
+from .schemas import ChatCompletionRequest
 
 UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
