@@ -1,0 +1,18 @@
+backends:
+  ollama-small:
+    type: ollama
+    endpoint_url: http://localhost:11434/v1/chat/completions
+    model: qwen2.5:0.5b
+
+models:
+  qwen-auto:
+    backends:
+      - name: ollama-small
+        priority: 1
+        weight: 1
+  qwen2.5:0.5b:
+    backends:
+    - name: ollama-small
+      priority: 1
+      weight: 1
+    

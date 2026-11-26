@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from .backends.ollama import OllamaBackend
 from .schemas import ChatCompletionRequest
+from .routing.router import RoundRobinRouter
 
 UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI):
     async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
         app.state.http_client = client
         app.state.ollama_backend = OllamaBackend(client, UPSTREAM_URL)
+        app.state.router = RoundRobinRouter([app.state.ollama_backend])
         yield
 
 
@@ -35,7 +37,7 @@ async def completion(request: Request, payload: ChatCompletionRequest):
         )
 
     try:
-        response = await request.app.state.ollama_backend.generate(payload.model_dump(exclude_none=True))
+        response = await request.app.state.router.generate(payload.model_dump(exclude_none=True))
 
     except httpx.ConnectError as exc:
         raise HTTPException(
