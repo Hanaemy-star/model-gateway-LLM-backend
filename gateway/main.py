@@ -1,21 +1,33 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 
-from .backends.ollama import OllamaBackend
+from gateway.backends.factory import build_backends
+from gateway.config import load_config
+from gateway.routing.builder import build_model_routers
+
 from .schemas import ChatCompletionRequest
-from .routing.router import RoundRobinRouter
 
-UPSTREAM_URL = "http://localhost:11434/v1/chat/completions"
 
+CONFIG_PATH = (
+        Path(__file__).resolve().parent.parent
+        / "configs"
+        / "backends.yaml"
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
-        app.state.http_client = client
-        app.state.ollama_backend = OllamaBackend(client, UPSTREAM_URL)
-        app.state.router = RoundRobinRouter([app.state.ollama_backend])
+        config = load_config(str(CONFIG_PATH))
+        backends = build_backends(config, client)
+        routers = build_model_routers(config, backends)
+
+        app.state.routers = routers
+        app.state.config = config
+        #временная переменная
+        app.state.router = routers["qwen2.5:0.5b"]
         yield
 
 
@@ -36,9 +48,18 @@ async def completion(request: Request, payload: ChatCompletionRequest):
             detail="Streaming пока не поддерживается",
         )
 
-    try:
-        response = await request.app.state.router.generate(payload.model_dump(exclude_none=True))
+    model_name = payload.model
+    router = request.app.state.routers.get(model_name)
 
+    if router is None:
+        raise HTTPException(
+                 status_code=404,
+                 detail="Запрашиваемый ресурс не найден"
+                 )
+
+    try:
+        response = await router.generate(payload.model_dump(exclude_none=True))
+        
     except httpx.ConnectError as exc:
         raise HTTPException(
             status_code=503,
